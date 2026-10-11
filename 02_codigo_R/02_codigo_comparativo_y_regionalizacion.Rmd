@@ -1,0 +1,2960 @@
+---
+title: "codigo comparativo y regionalizacion"
+output: html_document
+date: "2026-07-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Preparación de la base
+
+## Librerías
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(sf)
+library(rnaturalearth)
+```
+
+## Carpeta de gráficas
+```{r}
+carpeta_graficas <- "Figuras_Revista"
+
+dir.create(
+  carpeta_graficas,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+```
+
+## Base
+```{r}
+# Base
+archivo_base <- "04_base_comparativa_estados.xlsx"
+
+base_comparativa_estados <- read_excel(archivo_base, sheet = "Base")
+```
+
+## Funcion para guardar gráficas
+```{r}
+# Crear una función para guardar gráficas en PNG
+
+guardar_grafica_png <- function(
+    grafica,
+    nombre_archivo,
+    ancho = 10,
+    alto = 7,
+    resolucion = 600
+) {
+  
+  ggsave(
+    filename = file.path(
+      carpeta_graficas,
+      paste0(
+        nombre_archivo,
+        ".png"
+      )
+    ),
+    plot = grafica,
+    width = ancho,
+    height = alto,
+    units = "in",
+    dpi = resolucion,
+    bg = "white"
+  )
+}
+```
+
+
+## Tema general de las gráficas
+```{r}
+# Crear el tema general para las gráficas del artículo
+
+tema_articulo <- theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_blank(),
+    
+    axis.title = element_text(
+      size = 12,
+      color = "gray20"
+    ),
+    
+    axis.text = element_text(
+      size = 11,
+      color = "gray25"
+    ),
+    
+    panel.grid.minor = element_blank(),
+    
+    panel.grid.major.x = element_blank(),
+    
+    panel.grid.major.y = element_line(
+      color = "gray90",
+      linewidth = 0.25
+    ),
+    
+    legend.position = "bottom",
+    
+    legend.title = element_blank(),
+    
+    legend.text = element_text(
+      size = 11
+    ),
+    
+    legend.justification = "center",
+    
+    strip.text = element_text(
+      size = 11,
+      color = "gray20",
+      face = "bold"
+    ),
+    
+    plot.caption = element_text(
+      size = 10,
+      color = "gray35",
+      hjust = 0
+    ),
+    
+    plot.margin = margin(
+      t = 15,
+      r = 15,
+      b = 15,
+      l = 15
+    )
+  )
+```
+
+# 2. Construcción de las participaciones sectoriales
+
+## Cálculo de las participaciones
+
+```{r}
+# Crear la base estatal con niveles y participaciones sectoriales
+
+base_estatal <- base_comparativa_estados %>%
+  mutate(
+    estado = trimws(estado),
+    año = as.integer(año),
+    primarias_pct = primarias_nivel / pib_nivel,
+    secundarias_pct = secundarias_nivel / pib_nivel,
+    terciarias_pct = terciarias_nivel / pib_nivel
+  ) %>%
+  arrange(
+    estado,
+    año
+  )
+```
+
+# 3. Análisis descriptivo estatal de la terciarización
+
+## Cambio de la participación terciaria por entidad
+
+```{r}
+# Calcular el cambio de la participación terciaria entre 1980 y 2024
+
+cambio_estatal <- base_estatal %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  select(
+    estado,
+    año,
+    terciarias_pct
+  ) %>%
+  pivot_wider(
+    names_from = año,
+    values_from = terciarias_pct,
+    names_prefix = "terciarias_"
+  ) %>%
+  mutate(
+    cambio_pp = (
+      terciarias_2024 -
+        terciarias_1980
+    ) * 100
+  )
+```
+
+## Referencias del cambio entre entidades
+
+```{r}
+# Calcular el cambio promedio y mediano de las entidades
+
+referencias_cambio_estatal <- cambio_estatal %>%
+  summarise(
+    cambio_promedio_pp = mean(
+      cambio_pp
+    ),
+    
+    cambio_mediano_pp = median(
+      cambio_pp
+    ),
+    
+    entidades_con_aumento = sum(
+      cambio_pp > 0
+    ),
+    
+    entidades_con_disminucion = sum(
+      cambio_pp < 0
+    ),
+    
+    porcentaje_con_aumento = mean(
+      cambio_pp > 0
+    ) * 100
+  )
+
+cambio_promedio_pp <- referencias_cambio_estatal$cambio_promedio_pp
+
+cambio_mediano_pp <- referencias_cambio_estatal$cambio_mediano_pp
+
+referencias_cambio_estatal
+```
+
+## Comparación con el cambio promedio
+
+```{r}
+# Comparar el cambio de cada entidad con el promedio estatal
+
+cambio_estatal <- cambio_estatal %>%
+  mutate(
+    diferencia_promedio_pp = cambio_pp -
+      cambio_promedio_pp,
+    
+    comparacion_promedio = if_else(
+      cambio_pp >= cambio_promedio_pp,
+      "Por encima del promedio",
+      "Por debajo del promedio"
+    )
+  ) %>%
+  arrange(
+    desc(cambio_pp)
+  )
+```
+
+## Resultado de Nuevo León
+
+```{r}
+# Obtener el resultado correspondiente a Nuevo León
+
+resultado_nuevo_leon_estatal <- cambio_estatal %>%
+  filter(
+    estado == "Nuevo León"
+  ) %>%
+  transmute(
+    Estado = estado,
+    
+    `Participación terciaria 1980 (%)` = round(
+      terciarias_1980 * 100,
+      2
+    ),
+    
+    `Participación terciaria 2024 (%)` = round(
+      terciarias_2024 * 100,
+      2
+    ),
+    
+    `Cambio 1980-2024 (p.p.)` = round(
+      cambio_pp,
+      2
+    ),
+    
+    `Diferencia frente al promedio (p.p.)` = round(
+      diferencia_promedio_pp,
+      2
+    ),
+    
+    `Comparación con el promedio` = comparacion_promedio
+  )
+
+resultado_nuevo_leon_estatal
+```
+
+## Posición de Nuevo León y resumen del cambio estatal
+
+```{r}
+# Calcular las posiciones estatales en 1980, 2024 y por cambio acumulado
+
+posiciones_estatales <- cambio_estatal %>%
+  mutate(
+    posicion_1980 = min_rank(
+      desc(terciarias_1980)
+    ),
+    
+    posicion_2024 = min_rank(
+      desc(terciarias_2024)
+    ),
+    
+    posicion_cambio = min_rank(
+      desc(cambio_pp)
+    )
+  )
+```
+
+La posición 1 representa:
+
+- la mayor participación terciaria en 1980;
+
+- la mayor participación terciaria en 2024;
+
+- el mayor aumento en puntos porcentuales entre 1980 y 2024.
+
+```{r}
+# Obtener las posiciones correspondientes a Nuevo León
+
+posicion_nuevo_leon <- posiciones_estatales %>%
+  filter(
+    estado == "Nuevo León"
+  ) %>%
+  summarise(
+    posicion_1980 = posicion_1980,
+    posicion_2024 = posicion_2024,
+    posicion_cambio = posicion_cambio
+  )
+```
+
+```{r}
+# Construir la tabla resumen del análisis estatal
+
+tabla_resumen_estatal <- tibble::tibble(
+  Indicador = c(
+    "Entidades con aumento",
+    "Entidades con disminución",
+    "Entidades por encima del cambio promedio",
+    "Entidades por debajo del cambio promedio",
+    "Cambio promedio de las entidades",
+    "Cambio mediano de las entidades",
+    "Posición de Nuevo León por participación en 1980",
+    "Posición de Nuevo León por participación en 2024",
+    "Posición de Nuevo León por cambio en puntos porcentuales"
+  ),
+  
+  Resultado = c(
+    sum(cambio_estatal$cambio_pp > 0),
+    sum(cambio_estatal$cambio_pp < 0),
+    sum(cambio_estatal$cambio_pp > cambio_promedio_pp),
+    sum(cambio_estatal$cambio_pp < cambio_promedio_pp),
+    paste0(
+      round(cambio_promedio_pp, 2),
+      " p.p."
+    ),
+    paste0(
+      round(cambio_mediano_pp, 2),
+      " p.p."
+    ),
+    paste0(
+      posicion_nuevo_leon$posicion_1980,
+      " de 32"
+    ),
+    paste0(
+      posicion_nuevo_leon$posicion_2024,
+      " de 32"
+    ),
+    paste0(
+      posicion_nuevo_leon$posicion_cambio,
+      " de 32"
+    )
+  )
+)
+
+tabla_resumen_estatal
+```
+
+## Gráfica del cambio por entidad
+
+```{r}
+# Ordenar las entidades según el cambio en la participación terciaria
+
+orden_estados <- cambio_estatal %>%
+  arrange(
+    cambio_pp
+  ) %>%
+  pull(
+    estado
+  )
+
+datos_grafica_cambio_estatal <- cambio_estatal %>%
+  mutate(
+    estado = factor(
+      estado,
+      levels = orden_estados
+    )
+  )
+
+grafica_cambio_estatal <- ggplot(
+  datos_grafica_cambio_estatal,
+  aes(
+    x = estado,
+    y = cambio_pp,
+    fill = estado == "Nuevo León"
+  )
+) +
+
+  # Barras
+  geom_col(
+    width = 0.75
+  ) +
+
+  # Línea de referencia del promedio estatal
+  geom_hline(
+    yintercept = cambio_promedio_pp,
+    color = "gray30",
+    linewidth = 0.6,
+    linetype = "dashed"
+  ) +
+
+  # Línea del valor cero
+  geom_hline(
+    yintercept = 0,
+    color = "black",
+    linewidth = 0.4
+  ) +
+
+  # Destacar Nuevo León
+  scale_fill_manual(
+    values = c(
+      "TRUE" = "gray15",
+      "FALSE" = "gray75"
+    ),
+    guide = "none"
+  ) +
+
+  # Barras horizontales
+  coord_flip() +
+
+  # Corregir nombre del Estado de México
+  scale_x_discrete(
+    labels = c(
+      "México" = "Estado de México"
+    )
+  ) +
+
+  # Eje de cambios
+  scale_y_continuous(
+    labels = label_number(
+      accuracy = 1,
+      suffix = " p.p."
+    ),
+    breaks = pretty_breaks(n = 7),
+    expand = expansion(
+      mult = c(0.03, 0.08)
+    )
+  ) +
+
+  labs(
+    x = NULL,
+    y = "Cambio en la participación terciaria"
+  ) +
+
+  tema_articulo +
+
+  theme(
+    legend.position = "none",
+
+    axis.title.x = element_text(
+      size = 11,
+      color = "black"
+    ),
+
+    axis.text.x = element_text(
+      size = 9,
+      color = "black"
+    ),
+
+    axis.text.y = element_text(
+      size = 8.5,
+      color = "black"
+    ),
+
+    panel.grid.major.y = element_blank(),
+
+    panel.grid.major.x = element_line(
+      color = "gray90",
+      linewidth = 0.25
+    ),
+
+    panel.grid.minor = element_blank(),
+
+    plot.margin = margin(10, 15, 10, 10)
+  )
+
+# Mostrar gráfica
+grafica_cambio_estatal
+
+# Exportar en TIFF a 300 DPI
+ggsave(
+  filename = "Figuras_Revista/Anexo_A_Cambio_terciario_32_entidades.tiff",
+  plot = grafica_cambio_estatal,
+  width = 17,
+  height = 19,
+  units = "cm",
+  dpi = 300,
+  compression = "lzw",
+  bg = "white"
+)
+```
+
+Entre 1980 y 2024, la participación del sector terciario aumentó en 26 de las 32 entidades federativas y disminuyó únicamente en 6, lo que muestra que la terciarización fue un proceso ampliamente extendido, aunque con intensidades muy distintas entre estados. El aumento promedio fue de 5.9 puntos porcentuales y la mediana de 6.49 puntos porcentuales; 18 entidades registraron variaciones superiores al promedio y 14 se ubicaron por debajo. Los puntos porcentuales (p.p.) expresan la diferencia directa entre dos porcentajes: por ejemplo, pasar de 50% a 58% representa un aumento de 8 p.p., no de 8%.
+
+Nuevo León presentó un avance mayor que el promedio nacional de las entidades y ocupó la posición 12 de 32 por el incremento de su participación terciaria. Además, pasó del lugar 22 en 1980 al 19 en 2024, una mejora de tres posiciones. Esto indica que el sector terciario ganó relevancia en la estructura económica estatal, aunque el aumento fue menor que el observado en las entidades que encabezaron el proceso de terciarización.
+
+# 4. Regionalización de las entidades federativas
+
+```{r}
+# Crear el catálogo regional de Banco de México
+
+catalogo_regiones <- tibble::tribble(
+  ~estado, ~region,
+  "Baja California", "Norte",
+  "Chihuahua", "Norte",
+  "Coahuila de Zaragoza", "Norte",
+  "Nuevo León", "Norte",
+  "Sonora", "Norte",
+  "Tamaulipas", "Norte",
+  "Aguascalientes", "Centro norte",
+  "Baja California Sur", "Centro norte",
+  "Colima", "Centro norte",
+  "Durango", "Centro norte",
+  "Jalisco", "Centro norte",
+  "Michoacán de Ocampo", "Centro norte",
+  "Nayarit", "Centro norte",
+  "San Luis Potosí", "Centro norte",
+  "Sinaloa", "Centro norte",
+  "Zacatecas", "Centro norte",
+  "Ciudad de México", "Centro",
+  "México", "Centro",
+  "Guanajuato", "Centro",
+  "Hidalgo", "Centro",
+  "Morelos", "Centro",
+  "Puebla", "Centro",
+  "Querétaro", "Centro",
+  "Tlaxcala", "Centro",
+  "Campeche", "Sur",
+  "Chiapas", "Sur",
+  "Guerrero", "Sur",
+  "Oaxaca", "Sur",
+  "Quintana Roo", "Sur",
+  "Tabasco", "Sur",
+  "Veracruz de Ignacio de la Llave", "Sur",
+  "Yucatán", "Sur"
+)
+```
+
+```{r}
+# Incorporar la región a la base estatal
+
+base_estatal <- base_estatal %>%
+  left_join(
+    catalogo_regiones,
+    by = "estado"
+  ) %>%
+  mutate(
+    region = factor(
+      region,
+      levels = c(
+        "Norte",
+        "Centro norte",
+        "Centro",
+        "Sur"
+      )
+    )
+  ) %>%
+  arrange(
+    region,
+    estado,
+    año
+  )
+```
+
+## Indicadores regionales anuales
+
+```{r}
+# Calcular los indicadores anuales de terciarización por región
+
+indicadores_regionales <- base_estatal %>%
+  group_by(
+    region,
+    año
+  ) %>%
+  summarise(
+    terciarias_regional = sum(
+      terciarias_nivel
+    ) / sum(
+      pib_nivel
+    ),
+    
+    terciarias_promedio = mean(
+      terciarias_pct
+    ),
+    
+    terciarias_mediana = median(
+      terciarias_pct
+    ),
+    
+    dispersion_estatal = sd(
+      terciarias_pct
+    ),
+    
+    .groups = "drop"
+  )
+```
+
+## Cambio regional entre 1980 y 2024
+
+```{r}
+# Calcular el cambio de los indicadores regionales entre 1980 y 2024
+
+cambio_regional <- indicadores_regionales %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  select(
+    region,
+    año,
+    terciarias_regional,
+    terciarias_promedio,
+    terciarias_mediana
+  ) %>%
+  pivot_wider(
+    names_from = año,
+    values_from = c(
+      terciarias_regional,
+      terciarias_promedio,
+      terciarias_mediana
+    ),
+    names_glue = "{.value}_{año}"
+  ) %>%
+  mutate(
+    cambio_regional_pp = (
+      terciarias_regional_2024 -
+        terciarias_regional_1980
+    ) * 100,
+    
+    cambio_promedio_pp = (
+      terciarias_promedio_2024 -
+        terciarias_promedio_1980
+    ) * 100,
+    
+    cambio_mediana_pp = (
+      terciarias_mediana_2024 -
+        terciarias_mediana_1980
+    ) * 100
+  )
+```
+
+## Entidades con aumento y disminución por región
+
+```{r}
+# Contar las entidades con aumento y disminución dentro de cada región
+
+cambio_estatal_region <- cambio_estatal %>%
+  left_join(
+    catalogo_regiones,
+    by = "estado"
+  )
+
+conteo_cambio_region <- cambio_estatal_region %>%
+  group_by(region) %>%
+  summarise(
+    numero_entidades = n(),
+    
+    entidades_con_aumento = sum(
+      cambio_pp > 0
+    ),
+    
+    entidades_con_disminucion = sum(
+      cambio_pp < 0
+    ),
+    
+    .groups = "drop"
+  )
+```
+
+## Tabla resumen regional
+
+```{r}
+# Construir la tabla resumen del cambio regional
+
+tabla_resumen_regional <- cambio_regional %>%
+  left_join(
+    conteo_cambio_region,
+    by = "region"
+  ) %>%
+  transmute(
+    Región = as.character(region),
+    
+    `Participación regional 1980 (%)` = round(
+      terciarias_regional_1980 * 100,
+      2
+    ),
+    
+    `Participación regional 2024 (%)` = round(
+      terciarias_regional_2024 * 100,
+      2
+    ),
+    
+    `Cambio regional (p.p.)` = round(
+      cambio_regional_pp,
+      2
+    ),
+    
+    `Cambio del promedio estatal (p.p.)` = round(
+      cambio_promedio_pp,
+      2
+    ),
+    
+    `Cambio de la mediana estatal (p.p.)` = round(
+      cambio_mediana_pp,
+      2
+    ),
+    
+    `Entidades con aumento` = entidades_con_aumento,
+    
+    `Entidades con disminución` = entidades_con_disminucion
+  )
+
+tabla_resumen_regional
+```
+
+## Evolución de la participación terciaria regional
+
+```{r}
+# Definir los colores de las regiones
+
+colores_regiones <- c(
+  "Norte" = "#2F2F2F",
+  "Centro norte" = "#4E79A7",
+  "Centro" = "#8C564B",
+  "Sur" = "#59A14F"
+)
+
+# Graficar la evolución de la participación terciaria regional
+
+grafica_evolucion_regional <- ggplot(
+  indicadores_regionales,
+  aes(
+    x = año,
+    y = terciarias_regional,
+    color = region
+  )
+) +
+  
+  geom_line(
+    linewidth = 1.25
+  ) +
+  
+  scale_color_manual(
+    values = colores_regiones
+  ) +
+  
+  scale_y_continuous(
+    labels = percent_format(
+      accuracy = 1
+    ),
+    breaks = pretty_breaks(
+      n = 6
+    )
+  ) +
+  
+  scale_x_continuous(
+    breaks = seq(
+      1980,
+      2024,
+      5
+    )
+  ) +
+  
+  labs(
+    x = "Año",
+    y = "Participación regional del sector terciario en el PIB"
+  ) +
+  
+  tema_articulo
+
+grafica_evolucion_regional
+```
+
+```{r}
+guardar_grafica_png(
+  grafica = grafica_evolucion_regional,
+  nombre_archivo = "grafica_evolucion_regional_1980_2024",
+  ancho = 9,
+  alto = 6
+)
+```
+
+Entre 1980 y 2024, las cuatro regiones aumentaron la participación del sector terciario. La región Centro mantuvo el nivel más alto, al pasar de 59.97% a 69.64%, mientras que la región Norte permaneció con la menor participación, aunque aumentó de 40.65% a 48.39%. El mayor incremento regional correspondió al Sur, con 10.71 puntos porcentuales (p.p.), seguido del Centro con 9.68 p.p., el Norte con 7.74 p.p. y el Centro norte con 4.27 p.p. Los puntos porcentuales expresan la diferencia directa entre dos porcentajes; por ejemplo, pasar de 40% a 48% equivale a un aumento de 8 p.p., no de 8%.
+
+En la región Norte, a la que pertenece Nuevo León, las seis entidades registraron aumentos. El cambio promedio entre los estados fue de 7.09 p.p. y la mediana de 6.75 p.p., valores cercanos al incremento del agregado regional. No obstante, la distancia entre el Centro y el Norte aumentó de 19.32 p.p. en 1980 a 21.25 p.p. en 2024, por lo que el avance del Norte no modificó su posición como la región con menor participación terciaria.
+
+# 5. Referentes nacionales y pruebas de sensibilidad
+
+## Referentes nacionales
+
+```{r}
+# Construir los referentes nacionales de participación terciaria
+
+referentes_nacionales <- base_estatal %>%
+  group_by(año) %>%
+  summarise(
+    agregado_nacional = sum(
+      terciarias_nivel
+    ) / sum(
+      pib_nivel
+    ),
+    
+    agregado_nacional_sin_cdmx = sum(
+      terciarias_nivel[
+        estado != "Ciudad de México"
+      ]
+    ) / sum(
+      pib_nivel[
+        estado != "Ciudad de México"
+      ]
+    ),
+    
+    promedio_estatal = mean(
+      terciarias_pct
+    ),
+    
+    mediana_estatal = median(
+      terciarias_pct
+    ),
+    
+    .groups = "drop"
+  )
+```
+
+## Referentes regionales
+
+```{r}
+# Construir los referentes regionales con exclusiones específicas
+
+referentes_regionales <- base_estatal %>%
+  group_by(año) %>%
+  summarise(
+    centro = sum(
+      terciarias_nivel[
+        region == "Centro"
+      ]
+    ) / sum(
+      pib_nivel[
+        region == "Centro"
+      ]
+    ),
+    
+    centro_sin_cdmx = sum(
+      terciarias_nivel[
+        region == "Centro" &
+          estado != "Ciudad de México"
+      ]
+    ) / sum(
+      pib_nivel[
+        region == "Centro" &
+          estado != "Ciudad de México"
+      ]
+    ),
+    
+    norte = sum(
+      terciarias_nivel[
+        region == "Norte"
+      ]
+    ) / sum(
+      pib_nivel[
+        region == "Norte"
+      ]
+    ),
+    
+    norte_sin_nl = sum(
+      terciarias_nivel[
+        region == "Norte" &
+          estado != "Nuevo León"
+      ]
+    ) / sum(
+      pib_nivel[
+        region == "Norte" &
+          estado != "Nuevo León"
+      ]
+    ),
+    
+    .groups = "drop"
+  )
+```
+
+## Base anual de referentes
+
+```{r}
+# Integrar los referentes nacionales y regionales
+
+base_referentes <- referentes_nacionales %>%
+  left_join(
+    referentes_regionales,
+    by = "año"
+  )
+```
+
+## Sensibilidad a Ciudad de México
+
+```{r}
+# Comparar los referentes con y sin Ciudad de México
+
+sensibilidad_cdmx <- bind_rows(
+  base_referentes %>%
+    transmute(
+      año,
+      ambito = "Agregado nacional",
+      con_cdmx = agregado_nacional,
+      sin_cdmx = agregado_nacional_sin_cdmx
+    ),
+  
+  base_referentes %>%
+    transmute(
+      año,
+      ambito = "Región centro",
+      con_cdmx = centro,
+      sin_cdmx = centro_sin_cdmx
+    )
+) %>%
+  mutate(
+    diferencia_pp = (
+      con_cdmx -
+        sin_cdmx
+    ) * 100
+  )
+```
+
+## Tabla de sensibilidad en 1980 y 2024
+
+```{r}
+# Resumir el efecto de Ciudad de México en los años inicial y final
+
+tabla_sensibilidad_cdmx <- sensibilidad_cdmx %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  mutate(
+    con_cdmx = con_cdmx * 100,
+    sin_cdmx = sin_cdmx * 100
+  ) %>%
+  pivot_wider(
+    names_from = año,
+    values_from = c(
+      con_cdmx,
+      sin_cdmx,
+      diferencia_pp
+    ),
+    names_glue = "{.value}_{año}"
+  ) %>%
+  transmute(
+    Ámbito = ambito,
+    
+    `Con CDMX 1980 (%)` = round(
+      con_cdmx_1980,
+      2
+    ),
+    
+    `Sin CDMX 1980 (%)` = round(
+      sin_cdmx_1980,
+      2
+    ),
+    
+    `Diferencia 1980 (p.p.)` = round(
+      diferencia_pp_1980,
+      2
+    ),
+    
+    `Con CDMX 2024 (%)` = round(
+      con_cdmx_2024,
+      2
+    ),
+    
+    `Sin CDMX 2024 (%)` = round(
+      sin_cdmx_2024,
+      2
+    ),
+    
+    `Diferencia 2024 (p.p.)` = round(
+      diferencia_pp_2024,
+      2
+    )
+  )
+
+tabla_sensibilidad_cdmx
+```
+
+La Ciudad de México influye de manera importante en el nivel de terciarización del agregado nacional y, especialmente, de la región centro. No obstante, al excluirla se mantiene el aumento de la participación terciaria entre 1980 y 2024, por lo que la tendencia no puede atribuirse únicamente a esta entidad.
+
+Debido a esta influencia, el análisis de Nuevo León utilizará tanto el agregado nacional oficial como una alternativa sin Ciudad de México, mientras que la comparación regional principal se realizará frente al norte excluyendo a Nuevo León.
+
+# Posición comparativa de Nuevo León
+
+## Base comparativa de Nuevo León
+
+```{r}
+# Integrar la participación terciaria de Nuevo León con los referentes construidos
+
+base_comparacion_nl <- base_estatal %>%
+  filter(
+    estado == "Nuevo León"
+  ) %>%
+  select(
+    año,
+    nuevo_leon = terciarias_pct
+  ) %>%
+  left_join(
+    base_referentes,
+    by = "año"
+  ) %>%
+  mutate(
+    brecha_norte_pp = (
+      nuevo_leon -
+        norte_sin_nl
+    ) * 100,
+    
+    brecha_nacional_pp = (
+      nuevo_leon -
+        agregado_nacional
+    ) * 100,
+    
+    brecha_nacional_sin_cdmx_pp = (
+      nuevo_leon -
+        agregado_nacional_sin_cdmx
+    ) * 100,
+    
+    brecha_promedio_pp = (
+      nuevo_leon -
+        promedio_estatal
+    ) * 100,
+    
+    brecha_mediana_pp = (
+      nuevo_leon -
+        mediana_estatal
+    ) * 100
+  )
+```
+
+## Trayectorias principales
+
+```{r}
+# Preparar las trayectorias principales de comparación
+
+datos_trayectorias_nl <- base_comparacion_nl %>%
+  transmute(
+    año,
+    `Nuevo León` = nuevo_leon,
+    `Norte sin Nuevo León` = norte_sin_nl,
+    `Agregado nacional` = agregado_nacional,
+    `Agregado nacional sin CDMX` = agregado_nacional_sin_cdmx
+  ) %>%
+  pivot_longer(
+    cols = -año,
+    names_to = "referente",
+    values_to = "participacion"
+  ) %>%
+  mutate(
+    referente = factor(
+      referente,
+      levels = c(
+        "Nuevo León",
+        "Norte sin Nuevo León",
+        "Agregado nacional",
+        "Agregado nacional sin CDMX"
+      )
+    )
+  )
+```
+
+```{r}
+# Colores en escala de grises
+colores_comparacion_nl <- c(
+  "Nuevo León" = "gray10",
+  "Norte sin Nuevo León" = "gray55",
+  "Agregado nacional" = "gray35",
+  "Agregado nacional sin CDMX" = "gray65"
+)
+
+# Tipos de línea
+lineas_comparacion_nl <- c(
+  "Nuevo León" = "solid",
+  "Norte sin Nuevo León" = "dashed",
+  "Agregado nacional" = "dotdash",
+  "Agregado nacional sin CDMX" = "longdash"
+)
+
+# Gráfica definitiva
+grafica_trayectorias_nl <- ggplot(
+  datos_trayectorias_nl,
+  aes(
+    x = año,
+    y = participacion,
+    color = referente,
+    linetype = referente
+  )
+) +
+
+  geom_line(
+    linewidth = 1
+  ) +
+
+  # Destacar Nuevo León
+  geom_line(
+    data = datos_trayectorias_nl %>%
+      filter(referente == "Nuevo León"),
+    linewidth = 1.35,
+    show.legend = FALSE
+  ) +
+
+  scale_color_manual(
+    values = colores_comparacion_nl
+  ) +
+
+  scale_linetype_manual(
+    values = lineas_comparacion_nl
+  ) +
+
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    breaks = pretty_breaks(n = 6)
+  ) +
+
+  scale_x_continuous(
+    breaks = c(
+      seq(1980, 2020, 5),
+      2024
+    ),
+    expand = expansion(mult = c(0.01, 0.01))
+  ) +
+
+  labs(
+    x = "Año",
+    y = "Participación del sector terciario en el PIB"
+  ) +
+
+  guides(
+    color = guide_legend(
+      nrow = 2,
+      byrow = TRUE,
+      override.aes = list(linewidth = 1.1)
+    ),
+    linetype = guide_legend(
+      nrow = 2,
+      byrow = TRUE
+    )
+  ) +
+
+  tema_articulo +
+
+  theme(
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.text = element_text(
+      size = 9,
+      color = "black"
+    ),
+    legend.key.width = grid::unit(1.5, "cm"),
+    plot.margin = margin(10, 10, 10, 10)
+  )
+
+# Mostrar gráfica
+grafica_trayectorias_nl
+
+# Crear carpeta si todavía no existe
+dir.create(
+  "Figuras_Revista",
+  showWarnings = FALSE,
+  recursive = TRUE
+)
+
+# Exportar TIFF a 300 DPI
+ggsave(
+  filename = "Figuras_Revista/Figura_2_Comparacion_Nuevo_Leon.tiff",
+  plot = grafica_trayectorias_nl,
+  width = 16,
+  height = 10,
+  units = "cm",
+  dpi = 300,
+  compression = "lzw",
+  bg = "white"
+)
+```
+
+Entre 1980 y 2024, Nuevo León mantuvo una participación terciaria superior a la del resto de la región Norte. La entidad pasó de aproximadamente 45.5% a 53.8%, mientras que el Norte sin Nuevo León aumentó de cerca de 38.8% a 45.8%. Por tanto, la brecha favorable a Nuevo León se amplió de alrededor de 6.7 a 8 puntos porcentuales, lo que confirma una mayor presencia relativa del sector terciario dentro de su región.
+
+Frente al agregado nacional, Nuevo León se mantuvo por debajo durante todo el periodo, con una diferencia cercana a 6 puntos porcentuales en 2024. Sin embargo, al excluir a Ciudad de México, la trayectoria nacional se aproxima considerablemente a la de Nuevo León: ambas series convergieron durante parte de las décadas de 1990 y 2000, aunque desde finales de esa última década el agregado nacional sin CDMX se ubicó generalmente por encima. La comparación muestra que Ciudad de México eleva de manera importante el nivel del agregado nacional y amplía la distancia aparente respecto de Nuevo León.
+
+## Tabla comparativa de niveles y cambios
+
+```{r}
+tabla_comparacion_nl <- base_comparacion_nl %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  select(
+    año,
+    nuevo_leon,
+    norte_sin_nl,
+    agregado_nacional,
+    agregado_nacional_sin_cdmx,
+    promedio_estatal,
+    mediana_estatal
+  ) %>%
+  pivot_longer(
+    cols = -año,
+    names_to = "referente",
+    values_to = "participacion"
+  ) %>%
+  mutate(
+    referente = dplyr::recode(
+      referente,
+      nuevo_leon = "Nuevo León",
+      norte_sin_nl = "Norte sin Nuevo León",
+      agregado_nacional = "Agregado nacional",
+      agregado_nacional_sin_cdmx = "Agregado nacional sin CDMX",
+      promedio_estatal = "Promedio de las entidades",
+      mediana_estatal = "Mediana de las entidades"
+    ),
+    
+    referente = factor(
+      referente,
+      levels = c(
+        "Nuevo León",
+        "Norte sin Nuevo León",
+        "Agregado nacional",
+        "Agregado nacional sin CDMX",
+        "Promedio de las entidades",
+        "Mediana de las entidades"
+      )
+    )
+  ) %>%
+  pivot_wider(
+    names_from = año,
+    values_from = participacion,
+    names_prefix = "participacion_"
+  ) %>%
+  mutate(
+    cambio_pp = (
+      participacion_2024 -
+        participacion_1980
+    ) * 100
+  ) %>%
+  arrange(
+    referente
+  ) %>%
+  transmute(
+    Referente = referente,
+    
+    `Participación 1980 (%)` = round(
+      participacion_1980 * 100,
+      2
+    ),
+    
+    `Participación 2024 (%)` = round(
+      participacion_2024 * 100,
+      2
+    ),
+    
+    `Cambio 1980-2024 (p.p.)` = round(
+      cambio_pp,
+      2
+    )
+  )
+
+tabla_comparacion_nl
+```
+
+## Brechas de Nuevo León
+
+La brecha se calcula como: Nuevo León - Referente
+
+- una brecha positiva indica que Nuevo León está por encima;
+
+- una brecha negativa indica que está por debajo;
+
+- un movimiento hacia cero representa convergencia.
+
+```{r}
+# Preparar las brechas de Nuevo León frente a sus principales referentes
+
+datos_brechas_nl <- base_comparacion_nl %>%
+  transmute(
+    año,
+    `Norte sin Nuevo León` = brecha_norte_pp,
+    `Agregado nacional` = brecha_nacional_pp,
+    `Agregado nacional sin CDMX` = brecha_nacional_sin_cdmx_pp
+  ) %>%
+  pivot_longer(
+    cols = -año,
+    names_to = "referente",
+    values_to = "brecha_pp"
+  ) %>%
+  mutate(
+    referente = factor(
+      referente,
+      levels = c(
+        "Norte sin Nuevo León",
+        "Agregado nacional",
+        "Agregado nacional sin CDMX"
+      )
+    )
+  )
+```
+
+```{r}
+# Definir los colores de las brechas
+
+colores_brechas_nl <- c(
+  "Norte sin Nuevo León" = "#4E79A7",
+  "Agregado nacional" = "#8C564B",
+  "Agregado nacional sin CDMX" = "#59A14F"
+)
+```
+
+```{r}
+# Graficar las brechas de Nuevo León frente a sus referentes
+
+grafica_brechas_nl <- ggplot(
+  datos_brechas_nl,
+  aes(
+    x = año,
+    y = brecha_pp,
+    color = referente
+  )
+) +
+  
+  geom_hline(
+    yintercept = 0,
+    color = "gray35",
+    linewidth = 0.5,
+    linetype = "dashed"
+  ) +
+  
+  geom_line(
+    linewidth = 1.25
+  ) +
+  
+  scale_color_manual(
+    values = colores_brechas_nl
+  ) +
+  
+  scale_y_continuous(
+    labels = label_number(
+      accuracy = 1,
+      suffix = " p.p."
+    ),
+    breaks = pretty_breaks(
+      n = 6
+    )
+  ) +
+  
+  scale_x_continuous(
+    breaks = seq(
+      1980,
+      2024,
+      5
+    )
+  ) +
+  
+  labs(
+    x = "Año",
+    y = "Brecha de Nuevo León respecto al referente"
+  ) +
+  
+  tema_articulo
+
+grafica_brechas_nl
+
+guardar_grafica_png(
+  grafica = grafica_brechas_nl,
+  nombre_archivo = "grafica_brechas_nl",
+  ancho = 9,
+  alto = 6
+)
+```
+
+## Resumen del cambio de las brechas
+
+```{r}
+# Resumir las brechas de Nuevo León en 1980 y 2024
+
+tabla_brechas_nl <- datos_brechas_nl %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  pivot_wider(
+    names_from = año,
+    values_from = brecha_pp,
+    names_prefix = "brecha_"
+  ) %>%
+  mutate(
+    variacion_brecha_pp = brecha_2024 -
+      brecha_1980
+  ) %>%
+  transmute(
+    Referente = referente,
+    
+    `Brecha en 1980 (p.p.)` = round(
+      brecha_1980,
+      2
+    ),
+    
+    `Brecha en 2024 (p.p.)` = round(
+      brecha_2024,
+      2
+    ),
+    
+    `Variación de la brecha (p.p.)` = round(
+      variacion_brecha_pp,
+      2
+    )
+  )
+
+tabla_brechas_nl
+```
+# Mapas de la terciarización
+
+```{r}
+# Descargar la cartografía y homologar los nombres con la base estatal
+
+mapa_mexico_estados <- rnaturalearth::ne_download(
+  scale = 10,
+  type = "states",
+  category = "cultural",
+  returnclass = "sf"
+) %>%
+  filter(
+    admin == "Mexico"
+  ) %>%
+  mutate(
+    estado = case_when(
+      name == "Distrito Federal" ~ "Ciudad de México",
+      
+      name %in% c(
+        "Coahuila",
+        "Coahuila de Zaragoza"
+      ) ~ "Coahuila de Zaragoza",
+      
+      name %in% c(
+        "Michoacán",
+        "Michoacán de Ocampo"
+      ) ~ "Michoacán de Ocampo",
+      
+      name %in% c(
+        "Mexico",
+        "México",
+        "Estado de México"
+      ) ~ "México",
+      
+      name %in% c(
+        "Veracruz",
+        "Veracruz de Ignacio de la Llave"
+      ) ~ "Veracruz de Ignacio de la Llave",
+      
+      TRUE ~ name
+    )
+  ) %>%
+  select(
+    estado,
+    geometry
+  )
+```
+
+```{r}
+# Crear el tema general para los mapas
+
+tema_mapa <- theme_void(base_size = 13) +
+  theme(
+    legend.position = "right",
+    
+    legend.title = element_text(
+      size = 10,
+      color = "gray20"
+    ),
+    
+    legend.text = element_text(
+      size = 9,
+      color = "gray25"
+    ),
+    
+    plot.caption = element_text(
+      size = 10,
+      color = "gray35",
+      hjust = 0
+    ),
+    
+    plot.margin = margin(
+      t = 10,
+      r = 15,
+      b = 10,
+      l = 10
+    )
+  )
+```
+
+```{r}
+# Definir una escala común para los mapas de participación terciaria
+
+datos_terciarios_mapas <- base_estatal %>%
+  filter(
+    año %in% c(1980, 2024)
+  )
+
+# Definir los límites comunes con base en los datos observados
+
+limites_terciario_mapas <- range(
+  datos_terciarios_mapas$terciarias_pct,
+  na.rm = TRUE
+)
+
+# Mostrar etiquetas cada 20 puntos porcentuales
+
+quiebres_terciario_mapas <- seq(
+  from = ceiling(
+    limites_terciario_mapas[1] / 0.20
+  ) * 0.20,
+  
+  to = floor(
+    limites_terciario_mapas[2] / 0.20
+  ) * 0.20,
+  
+  by = 0.20
+)
+```
+
+## Mapa 1. Participación del sector terciario en el PIB estatal, 1980
+
+```{r}
+# Integrar la participación terciaria de 1980 con la cartografía
+
+mapa_terciario_1980_sf <- mapa_mexico_estados %>%
+  left_join(
+    base_estatal %>%
+      filter(
+        año == 1980
+      ) %>%
+      select(
+        estado,
+        terciarias_pct
+      ),
+    by = "estado"
+  )
+
+# Graficar la participación del sector terciario en 1980
+
+grafica_mapa_terciario_1980 <- ggplot(
+  mapa_terciario_1980_sf
+) +
+  
+  geom_sf(
+    aes(
+      fill = terciarias_pct
+    ),
+    color = "white",
+    linewidth = 0.3
+  ) +
+  
+  scale_fill_gradientn(
+    colors = c(
+      "#C9474D",
+      "#E99564",
+      "#F2E8B6",
+      "#91C788",
+      "#26845B"
+    ),
+    limits = limites_terciario_mapas,
+    breaks = quiebres_terciario_mapas,
+    oob = scales::squish,
+    labels = scales::label_percent(
+      accuracy = 1
+    ),
+    name = "Participación\nterciaria"
+  ) +
+  
+  coord_sf(
+    datum = NA
+  ) +
+  
+  labs(
+    caption = "Nota. Elaboración propia con datos del INEGI."
+  ) +
+  
+  tema_mapa
+
+grafica_mapa_terciario_1980
+
+guardar_grafica_png(
+  grafica = grafica_mapa_terciario_1980,
+  nombre_archivo = "grafica_mapa_terciario_1980",
+  ancho = 9,
+  alto = 6
+)
+```
+
+## Mapa 1. Participación del sector terciario en el PIB estatal, 2024
+
+```{r}
+# Integrar la participación terciaria de 2024 con la cartografía
+
+mapa_terciario_2024_sf <- mapa_mexico_estados %>%
+  left_join(
+    base_estatal %>%
+      filter(
+        año == 2024
+      ) %>%
+      select(
+        estado,
+        terciarias_pct
+      ),
+    by = "estado"
+  )
+
+# Graficar la participación del sector terciario en 2024
+
+grafica_mapa_terciario_2024 <- ggplot(
+  mapa_terciario_2024_sf
+) +
+  
+  geom_sf(
+    aes(
+      fill = terciarias_pct
+    ),
+    color = "white",
+    linewidth = 0.3
+  ) +
+  
+  scale_fill_gradientn(
+    colors = c(
+      "#C9474D",
+      "#E99564",
+      "#F2E8B6",
+      "#91C788",
+      "#26845B"
+    ),
+    limits = limites_terciario_mapas,
+    breaks = quiebres_terciario_mapas,
+    oob = scales::squish,
+    labels = scales::label_percent(
+      accuracy = 1
+    ),
+    name = "Participación\nterciaria"
+  ) +
+  
+  coord_sf(
+    datum = NA
+  ) +
+  
+  labs(
+    caption = "Nota. Elaboración propia con datos del INEGI."
+  ) +
+  
+  tema_mapa
+
+grafica_mapa_terciario_2024
+
+guardar_grafica_png(
+  grafica = grafica_mapa_terciario_2024,
+  nombre_archivo = "grafica_mapa_terciario_2024",
+  ancho = 9,
+  alto = 6
+)
+```
+
+Entre 1980 y 2024 se observa un desplazamiento general hacia mayores niveles de participación terciaria, reflejado en la expansión de tonalidades verdes en gran parte del país. No obstante, persiste una marcada heterogeneidad territorial: los valores más altos se concentran en varias entidades del Pacífico, el centro-sur y Quintana Roo, mientras que Campeche y Tabasco permanecen entre los niveles más bajos.
+
+Nuevo León se mantiene en un rango intermedio en ambos años, aunque con una mayor participación terciaria en 2024. La comparación confirma que la terciarización avanzó de forma desigual y que las diferencias no responden a una división regional uniforme, sino a la estructura productiva particular de cada entidad.
+
+## Cambio estatal entre 1980 y 2024
+
+```{r}
+# Integrar el cambio estatal con la cartografía
+
+mapa_cambio_terciario_sf <- mapa_mexico_estados %>%
+  left_join(
+    cambio_estatal %>%
+      select(
+        estado,
+        cambio_pp
+      ),
+    by = "estado"
+  )
+
+grafica_mapa_cambio_terciario <- ggplot(
+  mapa_cambio_terciario_sf
+) +
+
+  geom_sf(
+    aes(fill = cambio_pp),
+    color = "white",
+    linewidth = 0.3
+  ) +
+
+  # Destacar Nuevo León con contorno negro
+  geom_sf(
+    data = mapa_cambio_terciario_sf %>%
+      filter(estado == "Nuevo León"),
+    fill = NA,
+    color = "black",
+    linewidth = 0.8
+  ) +
+
+  scale_fill_gradient2(
+    low = "gray80",
+    mid = "gray95",
+    high = "gray25",
+    midpoint = 0,
+    labels = label_number(
+      accuracy = 1,
+      suffix = " p.p."
+    ),
+    name = "Cambio\n1980-2024"
+  ) +
+
+  coord_sf(
+    datum = NA
+  ) +
+
+  labs(
+    caption = NULL
+  ) +
+
+  tema_mapa +
+
+  theme(
+    legend.position = "right",
+
+    legend.title = element_text(
+      size = 10,
+      color = "black"
+    ),
+
+    legend.text = element_text(
+      size = 9,
+      color = "black"
+    ),
+
+    plot.margin = margin(10, 15, 10, 10)
+  )
+
+grafica_mapa_cambio_terciario
+
+# Exportar TIFF a 300 DPI
+dir.create(
+  "Figuras_Revista",
+  showWarnings = FALSE,
+  recursive = TRUE
+)
+
+ggsave(
+  filename = "Figuras_Revista/Anexo_A_Mapa_cambio_terciario.tiff",
+  plot = grafica_mapa_cambio_terciario,
+  width = 16,
+  height = 11,
+  units = "cm",
+  dpi = 300,
+  compression = "lzw",
+  bg = "white"
+)
+```
+
+Entre 1980 y 2024 predominan los aumentos en la participación del sector terciario, aunque con diferencias importantes entre entidades. Los mayores avances se concentran en algunos estados del centro y sur, mientras que las disminuciones se localizan principalmente en parte del centro-norte y en casos aislados del sureste.
+
+Nuevo León registra un cambio positivo de magnitud intermedia, por debajo de las entidades con los mayores incrementos, pero claramente alejado de aquellas que redujeron su participación terciaria. Los cambios se expresan en puntos porcentuales (p.p.), es decir, como la diferencia directa entre la participación de 1980 y la de 2024.
+
+## Top 10 estados con mayor porcentaje terciario
+
+```{r}
+# Seleccionar las diez entidades con mayor participación terciaria en 2024
+
+top10_terciario_2024 <- base_estatal %>%
+  filter(
+    año == 2024
+  ) %>%
+  arrange(
+    desc(terciarias_pct)
+  ) %>%
+  slice_head(
+    n = 10
+  ) %>%
+  mutate(
+    posicion = row_number(),
+    
+    estado_grafica = paste0(
+      posicion,
+      ". ",
+      estado
+    ),
+    
+    estado_grafica = forcats::fct_reorder(
+      estado_grafica,
+      terciarias_pct
+    ),
+    
+    grupo = if_else(
+      estado == "Nuevo León",
+      "Nuevo León",
+      "Resto de las entidades"
+    )
+  )
+
+# Preparar la tabla de las entidades con mayor participación terciaria
+
+tabla_top10_terciario_2024 <- top10_terciario_2024 %>%
+  transmute(
+    Posición = posicion,
+    Entidad = estado,
+    
+    `Participación terciaria (%)` = round(
+      terciarias_pct * 100,
+      2
+    )
+  )
+
+tabla_top10_terciario_2024
+```
+
+# Relación entre participación inicial y cambio de la terciarización estatal
+
+```{r}
+# Construir la base estatal con la participación inicial y el cambio acumulado
+
+relacion_terciarizacion_estatal <- base_estatal %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  select(
+    estado,
+    año,
+    terciarias_pct
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = año,
+    values_from = terciarias_pct,
+    names_prefix = "terciarias_"
+  ) %>%
+  mutate(
+    participacion_inicial_pct = terciarias_1980 * 100,
+    
+    participacion_final_pct = terciarias_2024 * 100,
+    
+    cambio_terciario_pp = (
+      terciarias_2024 -
+        terciarias_1980
+    ) * 100,
+    
+    grupo = if_else(
+      estado == "Nuevo León",
+      "Nuevo León",
+      "Resto de las entidades"
+    )
+  )
+```
+
+```{r}
+# Estimar la relación entre participación inicial y cambio terciario
+
+modelo_relacion_terciarizacion <- lm(
+  cambio_terciario_pp ~ participacion_inicial_pct,
+  data = relacion_terciarizacion_estatal
+)
+
+summary(
+  modelo_relacion_terciarizacion
+)
+```
+
+En promedio, una participación terciaria inicial 1 punto porcentual mayor se asocia con un aumento posterior aproximadamente 0.146 puntos porcentuales menor. El signo negativo es compatible con convergencia relativa.
+
+Los resultados muestran evidencia débil de convergencia relativa en la participación terciaria estatal. El coeficiente asociado con la participación inicial es negativo y estadísticamente significativo al 10%, lo que indica que las entidades con mayor participación terciaria en 1980 tendieron a registrar incrementos posteriores ligeramente menores. Sin embargo, la baja capacidad explicativa del modelo sugiere que el nivel inicial explica solo una parte reducida de las diferencias observadas entre entidades.
+
+```{r}
+# Graficar la relación entre participación inicial y cambio terciario
+
+grafica_relacion_terciarizacion <- ggplot(
+  relacion_terciarizacion_estatal,
+  aes(
+    x = participacion_inicial_pct,
+    y = cambio_terciario_pp
+  )
+) +
+  
+  geom_hline(
+    yintercept = 0,
+    color = "gray60",
+    linewidth = 0.5,
+    linetype = "dashed"
+  ) +
+  
+  geom_smooth(
+    method = "lm",
+    formula = y ~ x,
+    se = FALSE,
+    color = "#2F2F2F",
+    linewidth = 0.9
+  ) +
+  
+  geom_point(
+    aes(
+      color = grupo,
+      size = grupo
+    ),
+    alpha = 0.9
+  ) +
+  
+  ggrepel::geom_text_repel(
+    data = relacion_terciarizacion_estatal %>%
+      filter(
+        estado == "Nuevo León"
+      ),
+    aes(
+      label = estado
+    ),
+    color = "#2F2F2F",
+    size = 4,
+    fontface = "bold",
+    box.padding = 0.5,
+    point.padding = 0.4,
+    min.segment.length = 0,
+    show.legend = FALSE
+  ) +
+  
+  scale_color_manual(
+    values = c(
+      "Nuevo León" = "#C43C39",
+      "Resto de las entidades" = "#708A99"
+    ),
+    guide = "none"
+  ) +
+  
+  scale_size_manual(
+    values = c(
+      "Nuevo León" = 4,
+      "Resto de las entidades" = 2.7
+    ),
+    guide = "none"
+  ) +
+  
+  scale_x_continuous(
+    labels = scales::label_number(
+      accuracy = 1,
+      suffix = "%"
+    ),
+    expand = expansion(
+      mult = c(
+        0.05,
+        0.08
+      )
+    )
+  ) +
+  
+  scale_y_continuous(
+    labels = scales::label_number(
+      accuracy = 1,
+      suffix = " p.p."
+    ),
+    expand = expansion(
+      mult = c(
+        0.08,
+        0.12
+      )
+    )
+  ) +
+  
+  labs(
+    x = "Participación del sector terciario en el PIB estatal, 1980",
+    y = "Cambio de la participación terciaria, 1980-2024"
+  ) +
+  
+  tema_articulo +
+  
+  theme(
+    legend.position = "none"
+  )
+
+grafica_relacion_terciarizacion
+```
+
+```{r}
+guardar_grafica_png(
+  grafica = grafica_relacion_terciarizacion,
+  nombre_archivo = "grafica_relacion_terciarizacion",
+  ancho = 9,
+  alto = 6
+)
+```
+
+# Participación de Nuevo León en el PIB terciario nacional
+
+```{r}
+nacional <- read_excel(archivo_base, sheet = "Nacional")
+```
+
+```{r}
+# Seleccionar el PIB terciario de Nuevo León
+
+terciario_nuevo_leon <- base_estatal %>%
+  filter(
+    estado == "Nuevo León"
+  ) %>%
+  select(
+    año,
+    terciarias_nivel
+  ) %>%
+  rename(
+    pib_terciario_nuevo_leon = terciarias_nivel
+  )
+
+# Seleccionar el PIB terciario nacional
+
+terciario_nacional <- nacional %>%
+  filter(
+    estado == "Nacional"
+  ) %>%
+  select(
+    año,
+    terciarias_nivel
+  ) %>%
+  rename(
+    pib_terciario_nacional = terciarias_nivel
+  )
+```
+
+```{r}
+# Calcular la participación de Nuevo León en el PIB terciario nacional
+
+participacion_nl_terciario_nacional <- terciario_nuevo_leon %>%
+  inner_join(
+    terciario_nacional,
+    by = "año"
+  ) %>%
+  mutate(
+    participacion_nl_terciario_nacional =
+      pib_terciario_nuevo_leon /
+      pib_terciario_nacional
+  ) %>%
+  arrange(
+    año
+  )
+```
+
+```{r}
+# Resumir la participación de Nuevo León en 1980 y 2024
+
+tabla_participacion_nl_terciario <- participacion_nl_terciario_nacional %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  transmute(
+    año,
+    
+    participacion_pct =
+      participacion_nl_terciario_nacional * 100
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = año,
+    values_from = participacion_pct,
+    names_prefix = "participacion_"
+  ) %>%
+  transmute(
+    `Participación en 1980 (%)` = round(
+      participacion_1980,
+      2
+    ),
+    
+    `Participación en 2024 (%)` = round(
+      participacion_2024,
+      2
+    ),
+    
+    `Cambio 1980-2024 (p.p.)` = round(
+      participacion_2024 -
+        participacion_1980,
+      2
+    )
+  )
+
+tabla_participacion_nl_terciario
+```
+
+```{r}
+# Preparar las etiquetas de los años inicial y final
+
+etiquetas_participacion_nl_terciario <- participacion_nl_terciario_nacional %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  mutate(
+    etiqueta = scales::percent(
+      participacion_nl_terciario_nacional,
+      accuracy = 0.1
+    )
+  )
+
+# Graficar la participación de Nuevo León en el terciario nacional
+
+grafica_participacion_nl_terciario <- ggplot(
+  participacion_nl_terciario_nacional,
+  aes(
+    x = año,
+    y = participacion_nl_terciario_nacional
+  )
+) +
+  
+  geom_line(
+    color = "#2F2F2F",
+    linewidth = 1.2
+  ) +
+  
+  geom_point(
+    data = etiquetas_participacion_nl_terciario,
+    color = "#2F2F2F",
+    size = 3
+  ) +
+  
+  geom_text(
+    data = etiquetas_participacion_nl_terciario,
+    aes(
+      label = etiqueta
+    ),
+    color = "#2F2F2F",
+    fontface = "bold",
+    size = 3.8,
+    vjust = -0.9
+  ) +
+  
+  scale_x_continuous(
+    breaks = seq(
+      1980,
+      2024,
+      by = 5
+    )
+  ) +
+  
+  scale_y_continuous(
+    labels = scales::label_percent(
+      accuracy = 0.1
+    ),
+    expand = expansion(
+      mult = c(
+        0.08,
+        0.16
+      )
+    )
+  ) +
+  
+  labs(
+    x = "Año",
+    y = "Participación terciaria de Nuevo León en el PIB terciario Nacional"
+  ) +
+  
+  tema_articulo +
+  
+  theme(
+    panel.grid.minor = element_blank()
+  )
+
+grafica_participacion_nl_terciario
+```
+
+```{r}
+guardar_grafica_png(
+  grafica = grafica_participacion_nl_terciario,
+  nombre_archivo = "grafica_participacion_nl_terciario",
+  ancho = 9,
+  alto = 6
+)
+```
+
+
+La participación de Nuevo León en el sector terciario nacional aumentó de 5.18% en 1980 a 7.27% en 2024, un incremento de 2.09 puntos porcentuales. El avance fue especialmente marcado desde finales de la década de 1980 hasta mediados de los 2000, seguido de fluctuaciones moderadas y una tendencia ascendente en los años recientes.
+
+En conjunto, la trayectoria indica que Nuevo León ganó peso relativo dentro de la actividad terciaria del país y alcanzó en 2024 su nivel más alto del periodo.
+
+## Comparativa con otros estados
+
+```{r}
+# Seleccionar el PIB terciario nacional de 2024
+
+terciario_nacional_2024 <- nacional %>%
+  filter(
+    estado == "Nacional",
+    año == 2024
+  ) %>%
+  transmute(
+    año,
+    terciario_nacional = terciarias_nivel
+  )
+```
+
+```{r}
+# Calcular la aportación de cada entidad al PIB terciario nacional
+
+ranking_terciario_nacional_2024 <- base_estatal %>%
+  filter(
+    año == 2024
+  ) %>%
+  select(
+    estado,
+    año,
+    terciarias_nivel
+  ) %>%
+  left_join(
+    terciario_nacional_2024,
+    by = "año"
+  ) %>%
+  mutate(
+    participacion_terciario_nacional =
+      terciarias_nivel /
+      terciario_nacional
+  ) %>%
+  arrange(
+    desc(participacion_terciario_nacional)
+  ) %>%
+  mutate(
+    posicion = row_number(),
+    
+    grupo = if_else(
+      estado == "Nuevo León",
+      "Nuevo León",
+      "Resto de las entidades"
+    )
+  )
+```
+
+```{r}
+# Consultar la posición de Nuevo León
+
+posicion_nuevo_leon_terciario <- ranking_terciario_nacional_2024 %>%
+  filter(
+    estado == "Nuevo León"
+  ) %>%
+  transmute(
+    Entidad = estado,
+    Posición = posicion,
+    
+    `Participación en el terciario nacional (%)` = round(
+      participacion_terciario_nacional * 100,
+      2
+    )
+  )
+
+posicion_nuevo_leon_terciario
+```
+
+```{r}
+# Seleccionar las diez entidades con mayor aportación terciaria
+
+top10_terciario_nacional_2024 <- ranking_terciario_nacional_2024 %>%
+  slice_head(
+    n = 10
+  ) %>%
+  mutate(
+    estado_grafica = paste0(
+      posicion,
+      ". ",
+      estado
+    ),
+    
+    estado_grafica = forcats::fct_reorder(
+      estado_grafica,
+      participacion_terciario_nacional
+    )
+  )
+
+# Preparar la tabla del Top 10
+
+tabla_top10_terciario_nacional_2024 <-
+  top10_terciario_nacional_2024 %>%
+  transmute(
+    Posición = posicion,
+    Entidad = estado,
+    
+    `Participación nacional (%)` = round(
+      participacion_terciario_nacional * 100,
+      2
+    )
+  )
+
+tabla_top10_terciario_nacional_2024
+```
+
+# Progreso de las actividades secundarias y terciarias en las entidades federativas
+
+```{r}
+# Construir la base estatal de comparación secundaria y terciaria
+
+base_progreso_sectorial <- base_estatal %>%
+  filter(
+    año %in% c(1980, 2024)
+  ) %>%
+  select(
+    estado,
+    año,
+    secundarias_nivel,
+    terciarias_nivel,
+    secundarias_pct,
+    terciarias_pct
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = año,
+    values_from = c(
+      secundarias_nivel,
+      terciarias_nivel,
+      secundarias_pct,
+      terciarias_pct
+    ),
+    names_sep = "_"
+  ) %>%
+  mutate(
+    cambio_secundario_pp = (
+      secundarias_pct_2024 -
+        secundarias_pct_1980
+    ) * 100,
+    
+    cambio_terciario_pp = (
+      terciarias_pct_2024 -
+        terciarias_pct_1980
+    ) * 100,
+    
+    crecimiento_secundario_anual_pct = if_else(
+      secundarias_nivel_1980 > 0 &
+        secundarias_nivel_2024 > 0,
+      
+      (
+        (
+          secundarias_nivel_2024 /
+            secundarias_nivel_1980
+        ) ^ (
+          1 / (2024 - 1980)
+        ) - 1
+      ) * 100,
+      
+      NA_real_
+    ),
+    
+    crecimiento_terciario_anual_pct = if_else(
+      terciarias_nivel_1980 > 0 &
+        terciarias_nivel_2024 > 0,
+      
+      (
+        (
+          terciarias_nivel_2024 /
+            terciarias_nivel_1980
+        ) ^ (
+          1 / (2024 - 1980)
+        ) - 1
+      ) * 100,
+      
+      NA_real_
+    )
+  )
+```
+
+## Reorientación terciaria
+
+```{r}
+# Calcular la reorientación estructural y la diferencia de crecimiento
+
+base_progreso_sectorial <- base_progreso_sectorial %>%
+  mutate(
+    reorientacion_terciaria_pp =
+      cambio_terciario_pp -
+      cambio_secundario_pp,
+    
+    diferencia_crecimiento_pct =
+      crecimiento_terciario_anual_pct -
+      crecimiento_secundario_anual_pct,
+    
+    patron_estructural = case_when(
+      cambio_terciario_pp > 0 &
+        cambio_secundario_pp < 0 ~
+        "Aumentó terciario y disminuyó secundario",
+      
+      cambio_terciario_pp > 0 &
+        cambio_secundario_pp >= 0 ~
+        "Aumentaron ambos sectores",
+      
+      cambio_terciario_pp <= 0 &
+        cambio_secundario_pp > 0 ~
+        "Aumentó secundario y disminuyó terciario",
+      
+      TRUE ~
+        "Disminuyeron ambos sectores"
+    ),
+    
+    grupo = if_else(
+      estado == "Nuevo León",
+      "Nuevo León",
+      "Resto de las entidades"
+    )
+  )
+```
+
+## Comparación de Nuevo León con las entidades federativas
+
+```{r}
+# Calcular la posición relativa de cada entidad
+
+base_progreso_sectorial <- base_progreso_sectorial %>%
+  mutate(
+    percentil_cambio_secundario =
+      percent_rank(
+        cambio_secundario_pp
+      ) * 100,
+    
+    percentil_cambio_terciario =
+      percent_rank(
+        cambio_terciario_pp
+      ) * 100,
+    
+    percentil_reorientacion =
+      percent_rank(
+        reorientacion_terciaria_pp
+      ) * 100,
+    
+    percentil_crecimiento_secundario =
+      percent_rank(
+        crecimiento_secundario_anual_pct
+      ) * 100,
+    
+    percentil_crecimiento_terciario =
+      percent_rank(
+        crecimiento_terciario_anual_pct
+      ) * 100
+  )
+
+# Calcular la posición de cada entidad en los indicadores sectoriales
+
+base_progreso_sectorial <- base_progreso_sectorial %>%
+  mutate(
+    posicion_cambio_secundario = min_rank(
+      desc(cambio_secundario_pp)
+    ),
+    
+    posicion_cambio_terciario = min_rank(
+      desc(cambio_terciario_pp)
+    ),
+    
+    posicion_reorientacion = min_rank(
+      desc(reorientacion_terciaria_pp)
+    ),
+    
+    posicion_crecimiento_secundario = min_rank(
+      desc(crecimiento_secundario_anual_pct)
+    ),
+    
+    posicion_crecimiento_terciario = min_rank(
+      desc(crecimiento_terciario_anual_pct)
+    ),
+    
+    posicion_diferencia_crecimiento = min_rank(
+      desc(diferencia_crecimiento_pct)
+    )
+  )
+```
+
+```{r}
+# Resumir los resultados y posiciones de Nuevo León
+
+tabla_nuevo_leon_progreso_sectorial <- base_progreso_sectorial %>%
+  filter(
+    estado == "Nuevo León"
+  ) %>%
+  transmute(
+    Entidad = estado,
+    
+    `Cambio secundario (p.p.)` = round(
+      cambio_secundario_pp,
+      2
+    ),
+    
+    `Posición en cambio secundario` = paste0(
+      posicion_cambio_secundario,
+      " de 32"
+    ),
+    
+    `Cambio terciario (p.p.)` = round(
+      cambio_terciario_pp,
+      2
+    ),
+    
+    `Posición en cambio terciario` = paste0(
+      posicion_cambio_terciario,
+      " de 32"
+    ),
+    
+    `Reorientación terciaria (p.p.)` = round(
+      reorientacion_terciaria_pp,
+      2
+    ),
+    
+    `Posición en reorientación` = paste0(
+      posicion_reorientacion,
+      " de 32"
+    ),
+    
+    `Crecimiento secundario anual (%)` = round(
+      crecimiento_secundario_anual_pct,
+      2
+    ),
+    
+    `Posición en crecimiento secundario` = paste0(
+      posicion_crecimiento_secundario,
+      " de 32"
+    ),
+    
+    `Crecimiento terciario anual (%)` = round(
+      crecimiento_terciario_anual_pct,
+      2
+    ),
+    
+    `Posición en crecimiento terciario` = paste0(
+      posicion_crecimiento_terciario,
+      " de 32"
+    ),
+    
+    `Diferencia de crecimiento (p.p.)` = round(
+      diferencia_crecimiento_pct,
+      2
+    ),
+    
+    `Posición en diferencia de crecimiento` = paste0(
+      posicion_diferencia_crecimiento,
+      " de 32"
+    ),
+    
+    `Patrón estructural` = patron_estructural
+  )
+
+tabla_nuevo_leon_progreso_sectorial
+```
+
+Entre 1980 y 2024, la participación secundaria de Nuevo León disminuyó 6.92 puntos porcentuales (p.p.), mientras que la terciaria aumentó 8.13 p.p. Esta combinación produjo una reorientación terciaria de 15.05 p.p., definida como la diferencia entre el aumento terciario y el cambio secundario. La entidad ocupó las posiciones 20, 12 y 13 de 32 en cambio secundario, cambio terciario y reorientación, respectivamente.
+
+## Comparar con la distribución estatal
+
+```{r}
+# Comparar Nuevo León con el promedio y la mediana estatal
+
+tabla_comparacion_progreso_sectorial <- bind_rows(
+  base_progreso_sectorial %>%
+    filter(
+      estado == "Nuevo León"
+    ) %>%
+    transmute(
+      Referencia = "Nuevo León",
+      
+      `Cambio secundario (p.p.)` = cambio_secundario_pp,
+      
+      `Cambio terciario (p.p.)` = cambio_terciario_pp,
+      
+      `Reorientación terciaria (p.p.)` =
+        reorientacion_terciaria_pp,
+      
+      `Crecimiento secundario anual (%)` =
+        crecimiento_secundario_anual_pct,
+      
+      `Crecimiento terciario anual (%)` =
+        crecimiento_terciario_anual_pct
+    ),
+  
+  base_progreso_sectorial %>%
+    summarise(
+      Referencia = "Promedio estatal",
+      
+      `Cambio secundario (p.p.)` = mean(
+        cambio_secundario_pp,
+        na.rm = TRUE
+      ),
+      
+      `Cambio terciario (p.p.)` = mean(
+        cambio_terciario_pp,
+        na.rm = TRUE
+      ),
+      
+      `Reorientación terciaria (p.p.)` = mean(
+        reorientacion_terciaria_pp,
+        na.rm = TRUE
+      ),
+      
+      `Crecimiento secundario anual (%)` = mean(
+        crecimiento_secundario_anual_pct,
+        na.rm = TRUE
+      ),
+      
+      `Crecimiento terciario anual (%)` = mean(
+        crecimiento_terciario_anual_pct,
+        na.rm = TRUE
+      )
+    ),
+  
+  base_progreso_sectorial %>%
+    summarise(
+      Referencia = "Mediana estatal",
+      
+      `Cambio secundario (p.p.)` = median(
+        cambio_secundario_pp,
+        na.rm = TRUE
+      ),
+      
+      `Cambio terciario (p.p.)` = median(
+        cambio_terciario_pp,
+        na.rm = TRUE
+      ),
+      
+      `Reorientación terciaria (p.p.)` = median(
+        reorientacion_terciaria_pp,
+        na.rm = TRUE
+      ),
+      
+      `Crecimiento secundario anual (%)` = median(
+        crecimiento_secundario_anual_pct,
+        na.rm = TRUE
+      ),
+      
+      `Crecimiento terciario anual (%)` = median(
+        crecimiento_terciario_anual_pct,
+        na.rm = TRUE
+      )
+    )
+) %>%
+  mutate(
+    across(
+      where(is.numeric),
+      ~ round(
+        .x,
+        2
+      )
+    )
+  )
+
+tabla_comparacion_progreso_sectorial
+```
+
+La disminución secundaria de Nuevo León fue mayor que el promedio (-4.59 p.p.) y la mediana estatal (-5.72 p.p.), mientras que su aumento terciario superó ambos referentes, de 5.90 y 6.49 p.p. En consecuencia, su reorientación terciaria también fue superior al promedio (10.49 p.p.) y a la mediana (13.06 p.p.), lo que ubica a la entidad dentro de la mitad superior de la distribución nacional.
+
+## Cambios en las participaciones secundaria y terciaria
+
+```{r}
+# Graficar los cambios de las participaciones sectoriales
+
+grafica_cambio_sectorial <- ggplot(
+  base_progreso_sectorial,
+  aes(
+    x = cambio_secundario_pp,
+    y = cambio_terciario_pp
+  )
+) +
+  
+  geom_vline(
+    xintercept = 0,
+    color = "gray65",
+    linewidth = 0.5,
+    linetype = "dashed"
+  ) +
+  
+  geom_hline(
+    yintercept = 0,
+    color = "gray65",
+    linewidth = 0.5,
+    linetype = "dashed"
+  ) +
+  
+  geom_point(
+    aes(
+      color = grupo,
+      size = grupo
+    ),
+    alpha = 0.9
+  ) +
+  
+  ggrepel::geom_text_repel(
+    data = base_progreso_sectorial %>%
+      filter(
+        estado == "Nuevo León"
+      ),
+    aes(
+      label = estado
+    ),
+    color = "#1F1F1F",
+    size = 4,
+    fontface = "bold",
+    box.padding = 0.5,
+    point.padding = 0.4,
+    min.segment.length = 0,
+    show.legend = FALSE
+  ) +
+  
+  scale_color_manual(
+    values = c(
+      "Nuevo León" = "#1F1F1F",
+      "Resto de las entidades" = "#9A9A9A"
+    ),
+    guide = "none"
+  ) +
+  
+  scale_size_manual(
+    values = c(
+      "Nuevo León" = 4,
+      "Resto de las entidades" = 2.7
+    ),
+    guide = "none"
+  ) +
+  
+  scale_x_continuous(
+    labels = scales::label_number(
+      accuracy = 1,
+      suffix = " p.p."
+    )
+  ) +
+  
+  scale_y_continuous(
+    labels = scales::label_number(
+      accuracy = 1,
+      suffix = " p.p."
+    )
+  ) +
+  
+  labs(
+    x = "Cambio secundario (p.p.)",
+    y = "Cambio terciario (p.p.)"
+  ) +
+  
+  tema_articulo +
+  
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank()
+  )
+
+grafica_cambio_sectorial
+```
+
+```{r}
+guardar_grafica_png(
+  grafica = grafica_cambio_sectorial,
+  nombre_archivo = "grafica_cambio_sectorial",
+  ancho = 9,
+  alto = 6
+)
+```
+
+
+La gráfica muestra una relación inversa entre los cambios en la participación de los sectores secundario y terciario de las entidades federativas: en general, los estados que redujeron su participación secundaria registraron aumentos en la terciaria. La mayoría se concentra en el cuadrante superior izquierdo, lo que sugiere un desplazamiento relativo de la estructura económica hacia las actividades terciarias.
+
+Nuevo León sigue este patrón, con una disminución cercana a 7 puntos porcentuales en el sector secundario y un aumento aproximado de 8 puntos en el terciario. Esta correlación describe una asociación entre ambos cambios, pero no implica por sí misma una relación causal ni una sustitución directa entre sectores.
+
+## Reorientación relativa hacia las actividades terciarias
+
+```{r}
+# Ordenar las entidades por reorientación terciaria
+
+grafica_reorientacion_base <- base_progreso_sectorial %>%
+  mutate(
+    estado = forcats::fct_reorder(
+      estado,
+      reorientacion_terciaria_pp
+    )
+  )
+
+# Graficar la reorientación terciaria de las entidades
+
+grafica_reorientacion_terciaria <- ggplot(
+  grafica_reorientacion_base,
+  aes(
+    x = reorientacion_terciaria_pp,
+    y = estado
+  )
+) +
+  
+  geom_vline(
+    xintercept = 0,
+    color = "gray65",
+    linewidth = 0.5,
+    linetype = "dashed"
+  ) +
+  
+  geom_segment(
+    aes(
+      x = 0,
+      xend = reorientacion_terciaria_pp,
+      yend = estado,
+      color = grupo
+    ),
+    linewidth = 0.7
+  ) +
+  
+  geom_point(
+    aes(
+      color = grupo,
+      size = grupo
+    )
+  ) +
+  
+  scale_y_discrete(
+    labels = c(
+      "México" = "Estado de México"
+    )
+  ) +
+  
+  scale_color_manual(
+    values = c(
+      "Nuevo León" = "#1F1F1F",
+      "Resto de las entidades" = "#9A9A9A"
+    ),
+    guide = "none"
+  ) +
+  
+  scale_size_manual(
+    values = c(
+      "Nuevo León" = 3.8,
+      "Resto de las entidades" = 2.4
+    ),
+    guide = "none"
+  ) +
+  
+  scale_x_continuous(
+    labels = scales::label_number(
+      accuracy = 1,
+      suffix = " p.p."
+    )
+  ) +
+  
+  labs(
+    x = "Reorientación terciaria (p.p.)",
+    y = NULL
+  ) +
+  
+  tema_articulo +
+  
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+grafica_reorientacion_terciaria
+```
+
+```{r}
+guardar_grafica_png(
+  grafica = grafica_reorientacion_terciaria,
+  nombre_archivo = "grafica_reorientacion_terciaria",
+  ancho = 9,
+  alto = 6
+)
+```
+
+La mayoría de las entidades que redujeron la participación secundaria aumentaron la terciaria. Nuevo León se localiza en este grupo, aunque sin encontrarse entre los casos de reorientación más pronunciada. El patrón describe un cambio en la composición sectorial, pero no implica que el crecimiento absoluto de la industria haya sido negativo.
+
+## Crecimiento de los sectores secundario y terciario
+
+```{r}
+# Calcular las medianas estatales de crecimiento sectorial
+
+mediana_crecimiento_secundario <- median(
+  base_progreso_sectorial$crecimiento_secundario_anual_pct,
+  na.rm = TRUE
+)
+
+mediana_crecimiento_terciario <- median(
+  base_progreso_sectorial$crecimiento_terciario_anual_pct,
+  na.rm = TRUE
+)
+
+# Graficar el crecimiento anual secundario y terciario
+
+grafica_crecimiento_sectorial <- ggplot(
+  base_progreso_sectorial,
+  aes(
+    x = crecimiento_secundario_anual_pct,
+    y = crecimiento_terciario_anual_pct
+  )
+) +
+  
+  geom_vline(
+    xintercept = mediana_crecimiento_secundario,
+    color = "gray65",
+    linewidth = 0.5,
+    linetype = "dashed"
+  ) +
+  
+  geom_hline(
+    yintercept = mediana_crecimiento_terciario,
+    color = "gray65",
+    linewidth = 0.5,
+    linetype = "dashed"
+  ) +
+  
+  geom_point(
+    aes(
+      color = grupo,
+      size = grupo
+    ),
+    alpha = 0.9
+  ) +
+  
+  ggrepel::geom_text_repel(
+    data = base_progreso_sectorial %>%
+      filter(
+        estado == "Nuevo León"
+      ),
+    aes(
+      label = estado
+    ),
+    color = "#1F1F1F",
+    size = 4,
+    fontface = "bold",
+    box.padding = 0.5,
+    point.padding = 0.4,
+    min.segment.length = 0,
+    show.legend = FALSE
+  ) +
+  
+  scale_color_manual(
+    values = c(
+      "Nuevo León" = "#1F1F1F",
+      "Resto de las entidades" = "#9A9A9A"
+    ),
+    guide = "none"
+  ) +
+  
+  scale_size_manual(
+    values = c(
+      "Nuevo León" = 4,
+      "Resto de las entidades" = 2.7
+    ),
+    guide = "none"
+  ) +
+  
+  scale_x_continuous(
+    labels = scales::label_number(
+      accuracy = 0.1,
+      suffix = "%"
+    )
+  ) +
+  
+  scale_y_continuous(
+    labels = scales::label_number(
+      accuracy = 0.1,
+      suffix = "%"
+    )
+  ) +
+  
+  labs(
+    x = "Crecimiento secundario anual",
+    y = "Crecimiento terciario anual"
+  ) +
+  
+  tema_articulo +
+  
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank()
+  )
+
+grafica_crecimiento_sectorial
+```
+
+El sector secundario de Nuevo León creció a una tasa anual de 2.40%, superior al promedio y la mediana estatales, y ocupó la posición 9 de 32. El sector terciario creció 3.16% anual, ubicándose en la posición 5; por tanto, superó al secundario en 0.76 p.p. anuales. La entidad combina así un crecimiento elevado de ambos sectores con un mayor dinamismo relativo de las actividades terciarias.
